@@ -1,14 +1,5 @@
 {
-  "lever": [
-    {
-      "company": "Netflix",
-      "slug": "netflix"
-    },
-    {
-      "company": "Atlassian",
-      "slug": "atlassian"
-    }
-  ],
+  "lever": [],
   "greenhouse": [
     {
       "company": "Stripe",
@@ -17,11 +8,59 @@
     {
       "company": "Vercel",
       "board_token": "vercel"
+    },
+    {
+      "company": "Figma",
+      "board_token": "figma"
+    },
+    {
+      "company": "Twitch",
+      "board_token": "twitch"
+    },
+    {
+      "company": "Cloudflare",
+      "board_token": "cloudflare"
+    },
+    {
+      "company": "Twilio",
+      "board_token": "twilio"
+    },
+    {
+      "company": "Affirm",
+      "board_token": "affirm"
+    },
+    {
+      "company": "Pinterest",
+      "board_token": "pinterest"
+    },
+    {
+      "company": "Lyft",
+      "board_token": "lyft"
+    },
+    {
+      "company": "Roblox",
+      "board_token": "roblox"
+    },
+    {
+      "company": "Amplitude",
+      "board_token": "amplitude"
+    },
+    {
+      "company": "Mixpanel",
+      "board_token": "mixpanel"
+    },
+    {
+      "company": "Sumo Logic",
+      "board_token": "sumologic"
+    },
+    {
+      "company": "Dropbox",
+      "board_token": "dropbox"
+    },
+    {
+      "company": "Axon",
+      "board_token": "axon"
     }
   ],
-  "github_raw_readmes": [
-    "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
-    "https://raw.githubusercontent.com/ambicuity/New-Grad-Jobs/main/README.md",
-    "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Software-Engineering-Positions/main/README.md"
-  ]
+  "github_raw_readmes": []
 }
