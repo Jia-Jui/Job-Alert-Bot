@@ -246,11 +246,14 @@ Application tracking is stored separately from seen-job de-duplication so it doe
 Examples:
 
 ```powershell
+python -m job_alert_bot seen list
 python -m job_alert_bot status set "lever:abc123" applied
 python -m job_alert_bot status get "lever:abc123"
 python -m job_alert_bot status list
 python -m job_alert_bot status list --status applied
 ```
+
+`seen list` is the easiest local lookup flow. It shows tracked jobs with their `dedupe_key` and current saved status, so you can copy the key into `status set`.
 
 Default bot runs are unchanged:
 

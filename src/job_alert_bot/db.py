@@ -19,6 +19,9 @@ class SeenJobsStore(Protocol):
     def save_job(self, job: JobPosting) -> None:
         ...
 
+    def list_seen_jobs(self) -> list[JobPosting]:
+        ...
+
 
 class JobStatusStore(Protocol):
     def get_status(self, dedupe_key: str) -> JobApplicationStatus | None:
@@ -79,6 +82,26 @@ class SQLiteSeenJobsStore:
             (job.dedupe_key, job.source, job.external_id, job.company, job.title, job.location, job.link),
         )
         self.conn.commit()
+
+    def list_seen_jobs(self) -> list[JobPosting]:
+        rows = self.conn.execute(
+            """
+            SELECT source, external_id, company, title, location, link
+            FROM seen_jobs
+            ORDER BY first_seen_at DESC, company, title
+            """
+        ).fetchall()
+        return [
+            JobPosting(
+                source=row[0],
+                external_id=row[1],
+                company=row[2],
+                title=row[3],
+                location=row[4],
+                link=row[5],
+            )
+            for row in rows
+        ]
 
 
 class SQLiteJobStatusStore:
@@ -197,7 +220,17 @@ class FirebaseSeenJobsStore:
     def save_job(self, job: JobPosting) -> None:
         payload = asdict(job)
         payload["dedupe_key"] = job.dedupe_key
+        if job.posted_at is not None:
+            payload["posted_at"] = job.posted_at.isoformat()
         self.root.child(_firebase_key(job.dedupe_key)).set(payload)
+
+    def list_seen_jobs(self) -> list[JobPosting]:
+        raw = self.root.get() or {}
+        jobs: list[JobPosting] = []
+        for payload in raw.values():
+            jobs.append(_job_posting_from_payload(payload))
+        jobs.sort(key=lambda item: (item.company, item.title, item.location))
+        return jobs
 
 
 class FirebaseJobStatusStore:
@@ -282,6 +315,20 @@ def _job_status_from_payload(dedupe_key: str, payload: dict) -> JobApplicationSt
         title=payload.get("title"),
         location=payload.get("location"),
         link=payload.get("link"),
+    )
+
+
+def _job_posting_from_payload(payload: dict) -> JobPosting:
+    posted_at_raw = payload.get("posted_at")
+    posted_at = datetime.fromisoformat(posted_at_raw) if posted_at_raw else None
+    return JobPosting(
+        source=payload["source"],
+        external_id=payload["external_id"],
+        company=payload["company"],
+        title=payload["title"],
+        location=payload["location"],
+        link=payload["link"],
+        posted_at=posted_at,
     )
 
 

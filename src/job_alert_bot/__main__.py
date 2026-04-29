@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .config import AppConfig
-from .db import build_job_status_store
+from .db import build_job_status_store, build_seen_jobs_store
 from .models import APPLICATION_STATUSES, JobApplicationStatus
 
 
@@ -12,6 +12,10 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("run", help="Run the scheduled job check once.")
+
+    seen_parser = subparsers.add_parser("seen", help="Inspect tracked jobs that have already been seen.")
+    seen_subparsers = seen_parser.add_subparsers(dest="seen_command", required=True)
+    seen_subparsers.add_parser("list", help="List seen jobs with dedupe keys and any saved status.")
 
     status_parser = subparsers.add_parser("status", help="Get or update application tracking statuses.")
     status_subparsers = status_parser.add_subparsers(dest="status_command", required=True)
@@ -93,6 +97,33 @@ def _handle_status_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_seen_command(args: argparse.Namespace) -> int:
+    config = _status_config()
+    seen_store = build_seen_jobs_store(config)
+    status_store = build_job_status_store(config)
+    statuses = {record.dedupe_key: record.status for record in status_store.list_statuses()}
+    jobs = seen_store.list_seen_jobs()
+
+    if not jobs:
+        print("No seen jobs found.")
+        return 0
+
+    for job in jobs:
+        current_status = statuses.get(job.dedupe_key, "-")
+        print(
+            " | ".join(
+                (
+                    current_status,
+                    job.company,
+                    job.title,
+                    job.location,
+                    job.dedupe_key,
+                )
+            )
+        )
+    return 0
+
+
 if __name__ == "__main__":
     parser = _build_parser()
     args = parser.parse_args()
@@ -104,5 +135,8 @@ if __name__ == "__main__":
 
     if args.command == "status":
         raise SystemExit(_handle_status_command(args))
+
+    if args.command == "seen":
+        raise SystemExit(_handle_seen_command(args))
 
     raise SystemExit(parser.format_help())
