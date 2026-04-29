@@ -25,9 +25,7 @@ jobs:
         env:
           JOB_ALERT_COMPANIES_JSON: ${{ secrets.JOB_ALERT_COMPANIES_JSON }}
         run: |
-          cat <<'EOF' > companies.json
-          $JOB_ALERT_COMPANIES_JSON
-          EOF
+          printf '%s' "$JOB_ALERT_COMPANIES_JSON" > companies.json
 
       - name: Run bot
         env:
