@@ -122,14 +122,14 @@ def load_config() -> tuple[AppConfig, dict]:
     data = json.loads(config.companies_file.read_text(encoding="utf-8"))
     data.setdefault("lever", [])
     data.setdefault("greenhouse", [])
-
-    github_urls = data.get("github_raw_readmes")
-    if not github_urls:
+    if "github_raw_readmes" not in data:
         github_env = os.getenv("JOB_ALERT_GITHUB_RAW_URLS", "")
         if github_env.strip():
             data["github_raw_readmes"] = [item.strip() for item in github_env.split(",") if item.strip()]
         else:
             data["github_raw_readmes"] = DEFAULT_GITHUB_READMES
+    elif data["github_raw_readmes"] is None:
+        data["github_raw_readmes"] = []
 
     return config, data
 

@@ -151,6 +151,12 @@ If `python` is not on your PATH, pass your interpreter explicitly:
 powershell -ExecutionPolicy Bypass -File .\scripts\run-local.ps1 -PythonCommand "C:\Path\To\python.exe"
 ```
 
+To verify email without waiting for a new job match:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\send-test-email.ps1
+```
+
 ### Schedule local runs on Windows
 
 Use Windows Task Scheduler:
@@ -315,7 +321,9 @@ Included in V1 configuration examples:
 
 - SimplifyJobs New-Grad Positions
 - ambicuity New-Grad Jobs
-- zapplyjobs New-Grad Software Engineering Positions
+- zapplyjobs New-Grad Software Engineering Jobs
+- jobright-ai 2026 Software Engineer New Grad
+- speedyapply 2026 SWE College Jobs
 
 These community-maintained repos can be noisy, so they are treated as optional supplemental sources.
 

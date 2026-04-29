@@ -62,5 +62,11 @@
       "board_token": "axon"
     }
   ],
-  "github_raw_readmes": []
+  "github_raw_readmes": [
+    "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+    "https://raw.githubusercontent.com/ambicuity/New-Grad-Jobs/main/README.md",
+    "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Software-Engineering-Jobs/main/README.md",
+    "https://raw.githubusercontent.com/jobright-ai/2026-Software-Engineer-New-Grad/main/README.md",
+    "https://raw.githubusercontent.com/speedyapply/2026-SWE-College-Jobs/main/README.md"
+  ]
 }
