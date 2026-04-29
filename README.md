@@ -21,6 +21,7 @@ This project is designed to stay at a hard budget of `$0`.
 - GitHub job-list repositories via raw README parsing
 - Keyword include/exclude filtering
 - SQLite or Firebase de-duplication
+- Optional application status tracking by job dedupe key
 - Telegram or email alerts
 - Local PC scheduled runs
 - GitHub Actions scheduled runs
@@ -225,6 +226,38 @@ Notification behavior:
 - Older or unknown-age unseen jobs are bundled into one digest email instead of many individual emails
 - Duplicate links within the same run are skipped before sending
 - Jobs are sorted by your preferred locations before alerts are sent
+
+## Application status tracking
+
+Application tracking is stored separately from seen-job de-duplication so it does not interfere with alerts or existing dedupe behavior.
+
+- Status is keyed by the job `dedupe_key`, which is `source:external_id`
+- Local mode stores statuses in the same SQLite database file
+- Firebase mode stores statuses in a separate `/job_statuses` path
+- Supported statuses:
+  - `saved`
+  - `applied`
+  - `interview`
+  - `in progress`
+  - `rejected`
+  - `offer`
+  - `closed`
+
+Examples:
+
+```powershell
+python -m job_alert_bot status set "lever:abc123" applied
+python -m job_alert_bot status get "lever:abc123"
+python -m job_alert_bot status list
+python -m job_alert_bot status list --status applied
+```
+
+Default bot runs are unchanged:
+
+```powershell
+python -m job_alert_bot
+python -m job_alert_bot run
+```
 
 Default include keywords:
 
