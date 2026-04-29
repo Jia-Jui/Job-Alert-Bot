@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+import requests
+
+from ..models import JobPosting
+
+
+def send_telegram_alert(bot_token: str, chat_id: str, job: JobPosting, timeout_seconds: int) -> None:
+    if not bot_token or not chat_id:
+        return
+
+    text = (
+        "🚨 New Job Match\n"
+        f"Company: {job.company}\n"
+        f"Role: {job.title}\n"
+        f"Location: {job.location}\n"
+        f"Apply: {job.link}"
+    )
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    response = requests.post(
+        url,
+        json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()

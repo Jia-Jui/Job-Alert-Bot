@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 .venv/
+local.settings.ps1
+jobs.db
+resume.pdf

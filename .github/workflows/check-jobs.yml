@@ -1,0 +1,50 @@
+name: Check Jobs
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+    - cron: "47 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write companies config
+        env:
+          JOB_ALERT_COMPANIES_JSON: ${{ secrets.JOB_ALERT_COMPANIES_JSON }}
+        run: |
+          cat <<'EOF' > companies.json
+          $JOB_ALERT_COMPANIES_JSON
+          EOF
+
+      - name: Run bot
+        env:
+          JOB_ALERT_COMPANIES_FILE: companies.json
+          JOB_ALERT_ENABLED: ${{ secrets.JOB_ALERT_ENABLED }}
+          JOB_ALERT_STORAGE_MODE: ${{ secrets.JOB_ALERT_STORAGE_MODE }}
+          JOB_ALERT_NOTIFICATION_CHANNEL: ${{ secrets.JOB_ALERT_NOTIFICATION_CHANNEL }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EMAIL_SMTP_HOST: ${{ secrets.EMAIL_SMTP_HOST }}
+          EMAIL_SMTP_PORT: ${{ secrets.EMAIL_SMTP_PORT }}
+          EMAIL_SMTP_USERNAME: ${{ secrets.EMAIL_SMTP_USERNAME }}
+          EMAIL_SMTP_PASSWORD: ${{ secrets.EMAIL_SMTP_PASSWORD }}
+          EMAIL_FROM_ADDRESS: ${{ secrets.EMAIL_FROM_ADDRESS }}
+          EMAIL_TO_ADDRESS: ${{ secrets.EMAIL_TO_ADDRESS }}
+          EMAIL_USE_TLS: ${{ secrets.EMAIL_USE_TLS }}
+          PYTHONPATH: src
+        run: python -m job_alert_bot
