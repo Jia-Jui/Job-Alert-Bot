@@ -73,12 +73,20 @@ DEFAULT_PREFERRED_LOCATIONS = [
 ]
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _default_repo_path(name: str) -> Path:
+    return _repo_root() / name
+
+
 @dataclass
 class AppConfig:
-    companies_file: Path = Path(os.getenv("JOB_ALERT_COMPANIES_FILE", "companies.json"))
+    companies_file: Path = Path(os.getenv("JOB_ALERT_COMPANIES_FILE", str(_default_repo_path("companies.json"))))
     enabled: bool = os.getenv("JOB_ALERT_ENABLED", "true").strip().lower() != "false"
     storage_mode: str = os.getenv("JOB_ALERT_STORAGE_MODE", "sqlite").strip().lower()
-    sqlite_db_path: Path = Path(os.getenv("JOB_ALERT_SQLITE_DB_PATH", "jobs.db"))
+    sqlite_db_path: Path = Path(os.getenv("JOB_ALERT_SQLITE_DB_PATH", str(_default_repo_path("jobs.db"))))
     notification_channel: str = os.getenv("JOB_ALERT_NOTIFICATION_CHANNEL", "telegram").strip().lower()
     firebase_database_url: str = os.getenv("FIREBASE_DATABASE_URL", "")
     firebase_service_account_json: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
@@ -107,12 +115,16 @@ def _split_keywords(env_name: str, defaults: list[str]) -> list[str]:
     return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
 
-def load_config() -> tuple[AppConfig, dict]:
-    config = AppConfig(
+def load_app_config() -> AppConfig:
+    return AppConfig(
         preferred_locations=_split_keywords("JOB_ALERT_PREFERRED_LOCATIONS", DEFAULT_PREFERRED_LOCATIONS),
         include_keywords=_split_keywords("JOB_ALERT_INCLUDE_KEYWORDS", DEFAULT_INCLUDE_KEYWORDS),
         exclude_keywords=_split_keywords("JOB_ALERT_EXCLUDE_KEYWORDS", DEFAULT_EXCLUDE_KEYWORDS),
     )
+
+
+def load_config() -> tuple[AppConfig, dict]:
+    config = load_app_config()
 
     if not config.companies_file.exists():
         raise FileNotFoundError(

@@ -23,6 +23,7 @@ class JobPosting:
     location: str
     link: str
     posted_at: datetime | None = None
+    first_seen_at: datetime | None = None
 
     @property
     def dedupe_key(self) -> str:

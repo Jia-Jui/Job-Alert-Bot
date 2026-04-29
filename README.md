@@ -246,14 +246,35 @@ Application tracking is stored separately from seen-job de-duplication so it doe
 Examples:
 
 ```powershell
+python -m job_alert_bot ui serve
 python -m job_alert_bot seen list
+python -m job_alert_bot queue review
 python -m job_alert_bot status set "lever:abc123" applied
+python -m job_alert_bot status applied "lever:abc123"
 python -m job_alert_bot status get "lever:abc123"
 python -m job_alert_bot status list
 python -m job_alert_bot status list --status applied
+python -m job_alert_bot status board
+python -m job_alert_bot status active
 ```
 
+`ui serve` starts a local click-based dashboard at `http://127.0.0.1:8765`. It uses the same SQLite or Firebase storage as the CLI commands, and it is intended for manual local use only.
+
 `seen list` is the easiest local lookup flow. It shows tracked jobs with their `dedupe_key` and current saved status, so you can copy the key into `status set`.
+
+`queue review` is the manual apply queue. It shows jobs whose `posted_at` or `first_seen_at` is at least 60 minutes old and that are still un-applied, so you can run it only when you are ready to review older openings.
+
+Status shortcuts are available for faster updates:
+
+```powershell
+python -m job_alert_bot status saved "lever:abc123"
+python -m job_alert_bot status applied "lever:abc123"
+python -m job_alert_bot status interview "lever:abc123"
+python -m job_alert_bot status in-progress "lever:abc123"
+python -m job_alert_bot status rejected "lever:abc123"
+python -m job_alert_bot status offer "lever:abc123"
+python -m job_alert_bot status closed "lever:abc123"
+```
 
 Default bot runs are unchanged:
 

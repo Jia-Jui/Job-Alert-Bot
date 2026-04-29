@@ -47,10 +47,12 @@ class SQLiteSeenJobsStore:
                 title TEXT NOT NULL,
                 location TEXT NOT NULL,
                 link TEXT NOT NULL,
+                posted_at TEXT,
                 first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        _ensure_sqlite_column(self.conn, "seen_jobs", "posted_at", "TEXT")
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS job_statuses (
@@ -76,17 +78,26 @@ class SQLiteSeenJobsStore:
         self.conn.execute(
             """
             INSERT OR IGNORE INTO seen_jobs (
-                dedupe_key, source, external_id, company, title, location, link
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                dedupe_key, source, external_id, company, title, location, link, posted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (job.dedupe_key, job.source, job.external_id, job.company, job.title, job.location, job.link),
+            (
+                job.dedupe_key,
+                job.source,
+                job.external_id,
+                job.company,
+                job.title,
+                job.location,
+                job.link,
+                job.posted_at.isoformat() if job.posted_at is not None else None,
+            ),
         )
         self.conn.commit()
 
     def list_seen_jobs(self) -> list[JobPosting]:
         rows = self.conn.execute(
             """
-            SELECT source, external_id, company, title, location, link
+            SELECT source, external_id, company, title, location, link, posted_at, first_seen_at
             FROM seen_jobs
             ORDER BY first_seen_at DESC, company, title
             """
@@ -99,6 +110,8 @@ class SQLiteSeenJobsStore:
                 title=row[3],
                 location=row[4],
                 link=row[5],
+                posted_at=_parse_datetime(row[6]),
+                first_seen_at=_parse_datetime(row[7]),
             )
             for row in rows
         ]
@@ -118,10 +131,12 @@ class SQLiteJobStatusStore:
                 title TEXT NOT NULL,
                 location TEXT NOT NULL,
                 link TEXT NOT NULL,
+                posted_at TEXT,
                 first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        _ensure_sqlite_column(self.conn, "seen_jobs", "posted_at", "TEXT")
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS job_statuses (
@@ -222,6 +237,8 @@ class FirebaseSeenJobsStore:
         payload["dedupe_key"] = job.dedupe_key
         if job.posted_at is not None:
             payload["posted_at"] = job.posted_at.isoformat()
+        if job.first_seen_at is None:
+            payload["first_seen_at"] = datetime.now(UTC).isoformat()
         self.root.child(_firebase_key(job.dedupe_key)).set(payload)
 
     def list_seen_jobs(self) -> list[JobPosting]:
@@ -319,8 +336,7 @@ def _job_status_from_payload(dedupe_key: str, payload: dict) -> JobApplicationSt
 
 
 def _job_posting_from_payload(payload: dict) -> JobPosting:
-    posted_at_raw = payload.get("posted_at")
-    posted_at = datetime.fromisoformat(posted_at_raw) if posted_at_raw else None
+    posted_at = _parse_datetime(payload.get("posted_at"))
     return JobPosting(
         source=payload["source"],
         external_id=payload["external_id"],
@@ -329,15 +345,14 @@ def _job_posting_from_payload(payload: dict) -> JobPosting:
         location=payload["location"],
         link=payload["link"],
         posted_at=posted_at,
+        first_seen_at=_parse_datetime(payload.get("first_seen_at")),
     )
 
 
 def _job_status_from_row(row: sqlite3.Row) -> JobApplicationStatus:
-    updated_at_raw = row["updated_at"]
-    if "T" in updated_at_raw:
-        updated_at = datetime.fromisoformat(updated_at_raw)
-    else:
-        updated_at = datetime.fromisoformat(updated_at_raw.replace(" ", "T"))
+    updated_at = _parse_datetime(row["updated_at"])
+    if updated_at is None:
+        raise ValueError("Job status row is missing updated_at.")
     return JobApplicationStatus(
         dedupe_key=row["dedupe_key"],
         status=row["status"],
@@ -349,3 +364,22 @@ def _job_status_from_row(row: sqlite3.Row) -> JobApplicationStatus:
         location=row["location"],
         link=row["link"],
     )
+
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    if "T" in value:
+        parsed = datetime.fromisoformat(value)
+    else:
+        parsed = datetime.fromisoformat(value.replace(" ", "T"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _ensure_sqlite_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_type: str) -> None:
+    columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    if any(column[1] == column_name for column in columns):
+        return
+    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
