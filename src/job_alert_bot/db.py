@@ -73,6 +73,8 @@ class FirebaseSeenJobsStore:
     def save_job(self, job: JobPosting) -> None:
         payload = asdict(job)
         payload["dedupe_key"] = job.dedupe_key
+        if job.posted_at is not None:
+            payload["posted_at"] = job.posted_at.isoformat()
         self.root.child(_firebase_key(job.dedupe_key)).set(payload)
 
 
