@@ -5,6 +5,7 @@ from email.message import EmailMessage
 
 from ..config import AppConfig
 from ..models import JobPosting
+from .common import job_summary_lines
 
 
 def send_email_alert(config: AppConfig, job: JobPosting) -> None:
@@ -12,13 +13,7 @@ def send_email_alert(config: AppConfig, job: JobPosting) -> None:
     message["Subject"] = f"New Job Match: {job.company} - {job.title}"
     message["From"] = config.email_from_address
     message["To"] = config.email_to_address
-    message.set_content(
-        "New Job Match\n"
-        f"Company: {job.company}\n"
-        f"Role: {job.title}\n"
-        f"Location: {job.location}\n"
-        f"Apply: {job.link}\n"
-    )
+    message.set_content("New Job Match\n" + "\n".join(job_summary_lines(job)) + "\n")
 
     with smtplib.SMTP(config.email_smtp_host, config.email_smtp_port, timeout=config.timeout_seconds) as server:
         if config.email_use_tls:
@@ -38,14 +33,10 @@ def send_email_digest(config: AppConfig, jobs: list[JobPosting]) -> None:
 
     lines = ["Job Alert Digest", "", f"Found {len(jobs)} older or backlog matches:", ""]
     for index, job in enumerate(jobs, start=1):
-        lines.extend(
-            [
-                f"{index}. {job.company} - {job.title}",
-                f"   Location: {job.location}",
-                f"   Apply: {job.link}",
-                "",
-            ]
-        )
+        lines.append(f"{index}. {job.company} - {job.title}")
+        for detail in job_summary_lines(job)[2:]:
+            lines.append(f"   {detail}")
+        lines.append("")
 
     message.set_content("\n".join(lines).strip() + "\n")
 

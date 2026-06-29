@@ -38,6 +38,10 @@ def fetch_jobs_from_readme(client: SourceClient, raw_readme_url: str) -> list[Jo
                 title=title,
                 location=location or "Unknown",
                 link=link,
+                public_job_url=link,
+                resolved_apply_url=link,
+                link_source="community_readme",
+                link_confidence="medium",
             )
         )
 

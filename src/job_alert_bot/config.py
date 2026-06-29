@@ -73,12 +73,38 @@ DEFAULT_PREFERRED_LOCATIONS = [
 ]
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _default_repo_path(name: str) -> Path:
+    return _repo_root() / name
+
+
+def _split_csv(env_name: str) -> list[str]:
+    raw = os.getenv(env_name, "")
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _load_json_map(env_name: str) -> dict[str, int]:
+    raw = os.getenv(env_name, "").strip()
+    if not raw:
+        return {}
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{env_name} must be a JSON object mapping company names to integer priorities.")
+    normalized: dict[str, int] = {}
+    for key, value in payload.items():
+        normalized[str(key).strip().lower()] = int(value)
+    return normalized
+
+
 @dataclass
 class AppConfig:
-    companies_file: Path = Path(os.getenv("JOB_ALERT_COMPANIES_FILE", "companies.json"))
+    companies_file: Path = Path(os.getenv("JOB_ALERT_COMPANIES_FILE", str(_default_repo_path("companies.json"))))
     enabled: bool = os.getenv("JOB_ALERT_ENABLED", "true").strip().lower() != "false"
     storage_mode: str = os.getenv("JOB_ALERT_STORAGE_MODE", "sqlite").strip().lower()
-    sqlite_db_path: Path = Path(os.getenv("JOB_ALERT_SQLITE_DB_PATH", "jobs.db"))
+    sqlite_db_path: Path = Path(os.getenv("JOB_ALERT_SQLITE_DB_PATH", str(_default_repo_path("jobs.db"))))
     notification_channel: str = os.getenv("JOB_ALERT_NOTIFICATION_CHANNEL", "telegram").strip().lower()
     firebase_database_url: str = os.getenv("FIREBASE_DATABASE_URL", "")
     firebase_service_account_json: str = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
@@ -98,6 +124,13 @@ class AppConfig:
     exclude_keywords: list[str] = field(default_factory=list)
     request_delay_seconds: float = float(os.getenv("JOB_ALERT_REQUEST_DELAY_SECONDS", "1.5"))
     timeout_seconds: int = int(os.getenv("JOB_ALERT_TIMEOUT_SECONDS", "20"))
+    enable_advanced_link_discovery: bool = os.getenv(
+        "JOB_ALERT_ENABLE_ADVANCED_LINK_DISCOVERY", "false"
+    ).strip().lower() == "true"
+    link_discovery_timeout_seconds: int = int(os.getenv("JOB_ALERT_LINK_DISCOVERY_TIMEOUT_SECONDS", "12"))
+    link_discovery_max_pages: int = int(os.getenv("JOB_ALERT_LINK_DISCOVERY_MAX_PAGES", "2"))
+    company_priority_overrides: dict[str, int] = field(default_factory=dict)
+    preferred_company_names: list[str] = field(default_factory=list)
 
 
 def _split_keywords(env_name: str, defaults: list[str]) -> list[str]:
@@ -107,12 +140,18 @@ def _split_keywords(env_name: str, defaults: list[str]) -> list[str]:
     return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
 
-def load_config() -> tuple[AppConfig, dict]:
-    config = AppConfig(
+def load_app_config() -> AppConfig:
+    return AppConfig(
         preferred_locations=_split_keywords("JOB_ALERT_PREFERRED_LOCATIONS", DEFAULT_PREFERRED_LOCATIONS),
         include_keywords=_split_keywords("JOB_ALERT_INCLUDE_KEYWORDS", DEFAULT_INCLUDE_KEYWORDS),
         exclude_keywords=_split_keywords("JOB_ALERT_EXCLUDE_KEYWORDS", DEFAULT_EXCLUDE_KEYWORDS),
+        company_priority_overrides=_load_json_map("JOB_ALERT_COMPANY_PRIORITIES"),
+        preferred_company_names=[item.lower() for item in _split_csv("JOB_ALERT_PREFERRED_COMPANIES")],
     )
+
+
+def load_config() -> tuple[AppConfig, dict]:
+    config = load_app_config()
 
     if not config.companies_file.exists():
         raise FileNotFoundError(
@@ -122,6 +161,7 @@ def load_config() -> tuple[AppConfig, dict]:
     data = json.loads(config.companies_file.read_text(encoding="utf-8"))
     data.setdefault("lever", [])
     data.setdefault("greenhouse", [])
+    data.setdefault("company_priorities", {})
     if "github_raw_readmes" not in data:
         github_env = os.getenv("JOB_ALERT_GITHUB_RAW_URLS", "")
         if github_env.strip():
@@ -130,6 +170,20 @@ def load_config() -> tuple[AppConfig, dict]:
             data["github_raw_readmes"] = DEFAULT_GITHUB_READMES
     elif data["github_raw_readmes"] is None:
         data["github_raw_readmes"] = []
+
+    if not isinstance(data["company_priorities"], dict):
+        raise ValueError("companies.json field 'company_priorities' must be a JSON object if provided.")
+
+    merged_priorities: dict[str, int] = {key.lower(): int(value) for key, value in data["company_priorities"].items()}
+    for target in data.get("lever", []):
+        if "priority" in target:
+            merged_priorities[target["company"].strip().lower()] = int(target["priority"])
+    for target in data.get("greenhouse", []):
+        if "priority" in target:
+            merged_priorities[target["company"].strip().lower()] = int(target["priority"])
+    for key, value in config.company_priority_overrides.items():
+        merged_priorities[key] = int(value)
+    config.company_priority_overrides = merged_priorities
 
     return config, data
 
@@ -146,6 +200,12 @@ def validate_notification_config(config: AppConfig) -> None:
 
     if config.notification_channel not in {"telegram", "email"}:
         raise ValueError("JOB_ALERT_NOTIFICATION_CHANNEL must be either 'telegram' or 'email'.")
+
+    if config.link_discovery_timeout_seconds <= 0:
+        raise ValueError("JOB_ALERT_LINK_DISCOVERY_TIMEOUT_SECONDS must be a positive integer.")
+
+    if config.link_discovery_max_pages <= 0:
+        raise ValueError("JOB_ALERT_LINK_DISCOVERY_MAX_PAGES must be a positive integer.")
 
     if config.notification_channel == "telegram":
         if not config.telegram_bot_token or not config.telegram_chat_id:

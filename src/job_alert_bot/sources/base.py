@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 import requests
+from requests import Response
 
 
 class SourceClient:
@@ -21,13 +22,15 @@ class SourceClient:
         )
 
     def get_json(self, url: str) -> Any:
-        response = self.session.get(url, timeout=self.timeout_seconds)
-        response.raise_for_status()
-        time.sleep(self.request_delay_seconds)
+        response = self.get_response(url)
         return response.json()
 
-    def get_text(self, url: str) -> str:
-        response = self.session.get(url, timeout=self.timeout_seconds)
+    def get_text(self, url: str, timeout_seconds: int | None = None) -> str:
+        response = self.get_response(url, timeout_seconds=timeout_seconds)
+        return response.text
+
+    def get_response(self, url: str, timeout_seconds: int | None = None, allow_redirects: bool = True) -> Response:
+        response = self.session.get(url, timeout=timeout_seconds or self.timeout_seconds, allow_redirects=allow_redirects)
         response.raise_for_status()
         time.sleep(self.request_delay_seconds)
-        return response.text
+        return response
