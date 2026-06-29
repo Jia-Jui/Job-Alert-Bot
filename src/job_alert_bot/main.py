@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Iterable
 
 from .config import load_config, validate_notification_config
 from .db import build_seen_jobs_store
-from .filters import location_priority, match_score, matches_keywords
+from .filters import RankingResult, evaluate_job, location_priority
+from .links import resolve_job_links
 from .models import JobPosting
 from .notifiers.email import send_email_alert, send_email_digest
 from .notifiers.telegram import send_telegram_alert
@@ -39,22 +41,29 @@ def main() -> int:
     seen_run_keys: set[str] = set()
 
     for job in jobs:
-        if not matches_keywords(job, config.include_keywords, config.exclude_keywords):
+        enriched_job = _prepare_job(job, client, config)
+        if _run_duplicate_key(enriched_job) in seen_run_keys:
             continue
-        if match_score(job, config.include_keywords, config.preferred_locations) < config.min_match_score:
+        if store.is_seen(enriched_job):
             continue
-        if store.is_seen(job):
-            continue
-        if _run_duplicate_key(job) in seen_run_keys:
+        exclusion_flags = {flag.strip() for flag in (enriched_job.exclusion_flags or "").split(",") if flag.strip()}
+        if exclusion_flags or (enriched_job.rank_score or 0) < config.min_match_score:
             continue
 
-        store.save_job(job)
-        seen_run_keys.add(_run_duplicate_key(job))
-        if _is_fresh_job(job, config.fresh_window_minutes):
-            fresh_jobs.append(job)
+        store.save_job(enriched_job)
+        seen_run_keys.add(_run_duplicate_key(enriched_job))
+        if _is_fresh_job(enriched_job, config.fresh_window_minutes):
+            fresh_jobs.append(enriched_job)
         else:
-            digest_jobs.append(job)
-        logging.info("New match: %s | %s | %s", job.company, job.title, job.link)
+            digest_jobs.append(enriched_job)
+        logging.info(
+            "New match: %s | %s | %s | score=%s | apply=%s",
+            enriched_job.company,
+            enriched_job.title,
+            enriched_job.original_job_url,
+            enriched_job.rank_score,
+            enriched_job.best_apply_url,
+        )
 
     fresh_jobs.sort(key=lambda job: location_priority(job, config.preferred_locations))
     digest_jobs.sort(key=lambda job: location_priority(job, config.preferred_locations))
@@ -135,3 +144,38 @@ def _run_duplicate_key(job: JobPosting) -> str:
     if normalized_link:
         return normalized_link
     return job.dedupe_key
+
+
+def _prepare_job(job: JobPosting, client: SourceClient, config) -> JobPosting:
+    resolved = resolve_job_links(job, client, config)
+    resolved = replace(
+        resolved,
+        company_priority=config.company_priority_overrides.get(resolved.company.strip().lower(), 0),
+    )
+    return _apply_ranking(resolved, _evaluate(resolved, config))
+
+
+def _evaluate(job: JobPosting, config) -> RankingResult:
+    return evaluate_job(
+        job,
+        include_keywords=config.include_keywords,
+        exclude_keywords=config.exclude_keywords,
+        preferred_locations=config.preferred_locations,
+        company_priorities=config.company_priority_overrides,
+        fresh_window_minutes=config.fresh_window_minutes,
+    )
+
+
+def _apply_ranking(job: JobPosting, ranking: RankingResult) -> JobPosting:
+    company_priority = job.company_priority
+    if company_priority is None:
+        company_priority = 0
+    return replace(
+        job,
+        rank_score=ranking.score,
+        rank_reason=ranking.reason,
+        exclusion_flags=", ".join(ranking.exclusion_flags) if ranking.exclusion_flags else None,
+        seniority_hint=ranking.seniority_hint,
+        work_mode=ranking.work_mode,
+        company_priority=company_priority,
+    )

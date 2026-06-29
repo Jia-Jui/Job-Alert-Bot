@@ -1038,12 +1038,14 @@ def _render_queue_card(item: ReviewQueueItem, min_age_minutes: int, queue_limit:
         f'<div><div class="job-company">{escape(job.company)}</div><h3 class="job-title">{escape(job.title)}</h3></div>'
         f'<span class="pill emphasis">{escape(item.status or "untracked")}</span>'
         '</div>'
-        f'<div class="job-meta">{escape(job.location)}<br><code>{escape(job.dedupe_key)}</code><br><a href="{escape(job.link)}" target="_blank" rel="noreferrer">Open posting</a></div>'
+        f'<div class="job-meta">{escape(job.location)}<br><code>{escape(job.dedupe_key)}</code><br><a href="{escape(job.best_apply_url or job.link)}" target="_blank" rel="noreferrer">Open best apply link</a></div>'
         '<div class="job-tags">'
         f'<span class="pill emphasis">score {item.score}</span>'
         f'<span class="pill">{item.age_minutes if item.age_minutes is not None else "?"}m old</span>'
+        f'<span class="pill">{escape(job.link_confidence or "unknown")} link</span>'
         f'<span class="pill">manual queue</span>'
         '</div>'
+        f'<div class="job-meta">{escape(item.reason or "Reason unavailable.")}</div>'
         f'{_render_status_actions(job.dedupe_key, min_age_minutes, queue_limit, seen_limit, ("applied", "saved", "rejected", "closed"))}'
         '</article>'
     )
@@ -1061,8 +1063,8 @@ def _render_status_card(
     )
     status_class = "success" if record.status in ACTIVE_PIPELINE_STATUSES else "emphasis"
     link_html = (
-        f'<a href="{escape(record.link)}" target="_blank" rel="noreferrer">Open posting</a>'
-        if record.link
+        f'<a href="{escape(record.best_apply_url or record.link)}" target="_blank" rel="noreferrer">Open best apply link</a>'
+        if (record.best_apply_url or record.link)
         else '<span class="muted">No link saved</span>'
     )
     return (
@@ -1071,7 +1073,7 @@ def _render_status_card(
         f'<div><div class="job-company">{escape(record.company or "-")}</div><h3 class="job-title">{escape(record.title or "-")}</h3></div>'
         f'<span class="pill {status_class}">{escape(record.status)}</span>'
         '</div>'
-        f'<div class="job-meta">{escape(record.location or "-")}<br><code>{escape(record.dedupe_key)}</code><br>{escape(record.updated_at.isoformat())}<br>{link_html}</div>'
+        f'<div class="job-meta">{escape(record.location or "-")}<br><code>{escape(record.dedupe_key)}</code><br>{escape(record.updated_at.isoformat())}<br>{link_html}<br>{escape(record.rank_reason or "Reason unavailable.")}</div>'
         f'{_render_status_actions(record.dedupe_key, min_age_minutes, queue_limit, seen_limit, ("interview", "in-progress", "offer", "rejected", "closed"))}'
         '</article>'
     )
@@ -1104,15 +1106,15 @@ def _render_board_column(
 
 def _render_board_card(record: JobApplicationStatus, min_age_minutes: int, queue_limit: int, seen_limit: int) -> str:
     link_html = (
-        f'<a href="{escape(record.link)}" target="_blank" rel="noreferrer">Open posting</a>'
-        if record.link
+        f'<a href="{escape(record.best_apply_url or record.link)}" target="_blank" rel="noreferrer">Open best apply link</a>'
+        if (record.best_apply_url or record.link)
         else '<span class="muted">No link saved</span>'
     )
     return (
         '<div class="mini-card">'
         f'<div class="job-company">{escape(record.company or "-")}</div>'
         f'<div class="job-title">{escape(record.title or "-")}</div>'
-        f'<small>{escape(record.location or "-")}<br>{escape(record.updated_at.isoformat())}<br><code>{escape(record.dedupe_key)}</code><br>{link_html}</small>'
+        f'<small>{escape(record.location or "-")}<br>{escape(record.updated_at.isoformat())}<br><code>{escape(record.dedupe_key)}</code><br>{link_html}<br>{escape(record.rank_reason or "Reason unavailable.")}</small>'
         f'{_render_status_actions(record.dedupe_key, min_age_minutes, queue_limit, seen_limit, ("saved", "applied", "interview", "in-progress", "rejected", "offer", "closed"))}'
         '</div>'
     )
@@ -1127,7 +1129,7 @@ def _render_seen_row(job: JobPosting, status_by_key: dict[str, str]) -> str:
         f'<td><div class="job-company">{escape(job.company)}</div><div class="muted">{escape(job.title)}</div></td>'
         f'<td>{escape(job.location)}</td>'
         f'<td><code>{escape(job.dedupe_key)}</code></td>'
-        f'<td><a href="{escape(job.link)}" target="_blank" rel="noreferrer">Open posting</a></td>'
+        f'<td><a href="{escape(job.best_apply_url or job.link)}" target="_blank" rel="noreferrer">Open best apply link</a></td>'
         '</tr>'
     )
 

@@ -22,6 +22,10 @@ def fetch_lever_jobs(client: SourceClient, company: str, slug: str) -> list[JobP
                 title=item.get("text", "").strip(),
                 location=location,
                 link=item.get("hostedUrl", "").strip(),
+                public_job_url=item.get("hostedUrl", "").strip(),
+                resolved_apply_url=item.get("applyUrl", "").strip() or item.get("hostedUrl", "").strip(),
+                link_source="official_api",
+                link_confidence="high",
                 posted_at=_parse_lever_posted_at(item.get("createdAt")),
             )
         )

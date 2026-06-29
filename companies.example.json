@@ -1,9 +1,15 @@
 {
+  "company_priorities": {
+    "stripe": 2,
+    "cloudflare": 2,
+    "axon": 1
+  },
   "lever": [],
   "greenhouse": [
     {
       "company": "Stripe",
-      "board_token": "stripe"
+      "board_token": "stripe",
+      "priority": 2
     },
     {
       "company": "Vercel",

@@ -21,6 +21,10 @@ def fetch_greenhouse_jobs(client: SourceClient, company: str, board_token: str) 
                 title=item.get("title", "").strip(),
                 location=location,
                 link=item.get("absolute_url", "").strip(),
+                public_job_url=item.get("absolute_url", "").strip(),
+                resolved_apply_url=item.get("absolute_url", "").strip(),
+                link_source="official_api",
+                link_confidence="high",
                 posted_at=_parse_greenhouse_posted_at(item),
             )
         )

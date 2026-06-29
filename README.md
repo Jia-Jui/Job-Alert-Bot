@@ -1,6 +1,6 @@
 # Job Alert Bot
 
-Job Alert Bot checks public job sources on a schedule, filters for entry-level software roles, stores seen jobs in either a local SQLite file or Firebase Realtime Database, and sends alerts through exactly one user-selected channel: Telegram or email.
+Job Alert Bot checks public job sources on a schedule, resolves the safest public apply link it can find, ranks jobs for early-career software roles, stores seen jobs in either a local SQLite file or Firebase Realtime Database, and sends alerts through exactly one user-selected channel: Telegram or email.
 
 ## Budget rule
 
@@ -14,11 +14,25 @@ This project is designed to stay at a hard budget of `$0`.
 - No paid email provider
 - No paid server or VPS
 
-## V1 scope
+## Closed-loop workflow
+
+The project is now designed around a closed review loop:
+
+1. Discover jobs from public sources
+2. Resolve the best public apply link without bypassing anti-bot protections
+3. Rank jobs with explainable scoring
+4. Notify you about stronger matches
+5. Store job metadata and application status
+6. Let you review, save, apply, reject, or close jobs from CLI or local UI
+7. Reuse those outcomes in future review sessions
+
+## Scope
 
 - Lever company boards via public JSON
 - Greenhouse boards via public API
 - GitHub job-list repositories via raw README parsing
+- Safe public link resolution with redirect and HTML fallback
+- Explainable ranking and score reasons
 - Keyword include/exclude filtering
 - SQLite or Firebase de-duplication
 - Optional application status tracking by job dedupe key
@@ -42,6 +56,11 @@ This project is designed to reduce bot-trigger risk instead of trying to bypass 
   - Use a normal descriptive user agent
   - Do not rotate proxies
   - Do not attempt CAPTCHA evasion
+- Only inspect public pages and URLs:
+  - Prefer API-provided links
+  - Follow normal redirects
+  - Parse public HTML for likely apply links
+  - Keep advanced multi-page discovery opt-in only
 - Cache and de-duplicate:
   - Only alert on unseen jobs
   - Prefer stable source IDs where available
@@ -119,7 +138,25 @@ JOB_ALERT_EXCLUDE_KEYWORDS
 JOB_ALERT_REQUEST_DELAY_SECONDS
 JOB_ALERT_TIMEOUT_SECONDS
 JOB_ALERT_GITHUB_RAW_URLS
+JOB_ALERT_ENABLE_ADVANCED_LINK_DISCOVERY
+JOB_ALERT_LINK_DISCOVERY_TIMEOUT_SECONDS
+JOB_ALERT_LINK_DISCOVERY_MAX_PAGES
+JOB_ALERT_COMPANY_PRIORITIES
+JOB_ALERT_PREFERRED_COMPANIES
 ```
+
+Optional ranking and link-resolution tuning:
+
+- `JOB_ALERT_COMPANY_PRIORITIES`
+  A JSON object mapping company names to integer priority bonuses, for example `{"stripe": 2, "cloudflare": 2}`.
+- `JOB_ALERT_PREFERRED_COMPANIES`
+  A comma-separated list reserved for future workflow tuning.
+- `JOB_ALERT_ENABLE_ADVANCED_LINK_DISCOVERY`
+  Defaults to `false`. When `true`, the resolver may inspect additional public pages linked from the original public posting, up to the configured page limit.
+- `JOB_ALERT_LINK_DISCOVERY_TIMEOUT_SECONDS`
+  Timeout for redirect and public HTML resolution work.
+- `JOB_ALERT_LINK_DISCOVERY_MAX_PAGES`
+  Maximum number of extra public pages to inspect when advanced discovery is enabled.
 
 ## Run mode options
 
@@ -226,6 +263,54 @@ Notification behavior:
 - Older or unknown-age unseen jobs are bundled into one digest email instead of many individual emails
 - Duplicate links within the same run are skipped before sending
 - Jobs are sorted by your preferred locations before alerts are sent
+- Alerts include score, ranking reason, best available apply link, original job link when different, and link confidence when available
+
+## Link resolution
+
+Each job can now carry:
+
+- `public_job_url`
+- `resolved_apply_url`
+- `referral_or_tracking_url`
+- `link_source`
+- `link_confidence`
+- `link_resolution_notes`
+
+Resolution order:
+
+1. Official API-provided public/apply URL
+2. Normal HTTP redirect target
+3. Public job detail page HTML parsing
+4. Optional advanced public multi-page discovery when explicitly enabled
+
+If nothing better is found, the bot falls back to the original job URL.
+
+Confidence levels:
+
+- `high`
+- `medium`
+- `low`
+
+The project does not use CAPTCHA evasion, login-only scraping, rotating proxies, or anti-bot bypass behavior.
+
+## Ranking
+
+Ranking is explainable and now considers:
+
+- title match
+- early-career vs. seniority hints
+- preferred locations
+- remote/hybrid signal
+- posting freshness
+- company priority bonuses
+- apply-link confidence
+- exclusion flags
+
+A stored reason string looks like:
+
+```text
+Strong title match, preferred location, fresh posting, direct apply link found.
+```
 
 ## Application status tracking
 
@@ -264,6 +349,8 @@ python -m job_alert_bot status active
 
 `queue review` is the manual apply queue. It shows jobs whose `posted_at` or `first_seen_at` is at least 60 minutes old and that are still un-applied, so you can run it only when you are ready to review older openings.
 
+`queue review` now also shows the ranking reason, score, confidence, and best available apply link.
+
 Status shortcuts are available for faster updates:
 
 ```powershell
@@ -282,6 +369,29 @@ Default bot runs are unchanged:
 python -m job_alert_bot
 python -m job_alert_bot run
 ```
+
+## Review and apply workflow
+
+Recommended manual loop:
+
+1. Let the scheduled bot collect and notify
+2. Open the local dashboard:
+
+```powershell
+python -m job_alert_bot ui serve
+```
+
+3. Review the queue of older un-applied jobs
+4. Open the best available apply link
+5. Mark the result:
+   - `saved`
+   - `applied`
+   - `interview`
+   - `rejected`
+   - `offer`
+   - `closed`
+
+The local UI and CLI both use the same stored job metadata and status records.
 
 Default include keywords:
 
@@ -369,7 +479,11 @@ New Job Match
 Company: GitKraken
 Role: Software Engineer
 Location: Remote
-Apply: https://example.com/apply
+Score: 10
+Why: Strong title match, preferred location, fresh posting, direct apply link found.
+Best apply link: https://example.com/apply
+Original job link: https://example.com/jobs/123
+Link confidence: high
 ```
 
 ## Source ideas

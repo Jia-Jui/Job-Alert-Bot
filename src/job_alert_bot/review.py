@@ -25,6 +25,8 @@ class ReviewQueueItem:
     status: str | None
     score: int
     age_minutes: int | None
+    reason: str | None = None
+    needs_link_review: bool = False
 
 
 def normalize_status_alias(value: str) -> str:
@@ -54,7 +56,7 @@ def build_review_queue(
         if reference_time is None or reference_time > threshold:
             continue
 
-        score = match_score(job, include_keywords, preferred_locations)
+        score = job.rank_score if job.rank_score is not None else match_score(job, include_keywords, preferred_locations)
         age_minutes = int((datetime.now(UTC) - reference_time).total_seconds() // 60)
         items.append(
             ReviewQueueItem(
@@ -62,6 +64,8 @@ def build_review_queue(
                 status=current_status,
                 score=score,
                 age_minutes=age_minutes,
+                reason=job.rank_reason,
+                needs_link_review=(job.link_confidence or "").lower() in {"", "low"},
             )
         )
 

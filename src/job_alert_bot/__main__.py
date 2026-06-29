@@ -82,6 +82,14 @@ def _print_status(record: JobApplicationStatus) -> None:
         print(f"location: {record.location}")
     if record.link:
         print(f"link: {record.link}")
+    if record.best_apply_url:
+        print(f"best_apply_url: {record.best_apply_url}")
+    if record.link_confidence:
+        print(f"link_confidence: {record.link_confidence}")
+    if record.rank_score is not None:
+        print(f"rank_score: {record.rank_score}")
+    if record.rank_reason:
+        print(f"rank_reason: {record.rank_reason}")
 
 
 def _handle_status_command(args: argparse.Namespace) -> int:
@@ -147,7 +155,9 @@ def _handle_status_command(args: argparse.Namespace) -> int:
                         record.company,
                         record.title,
                         record.location,
+                        f"score={record.rank_score}" if record.rank_score is not None else None,
                         record.dedupe_key,
+                        record.best_apply_url or record.link,
                     )
                     if item
                 )
@@ -161,17 +171,19 @@ def _handle_status_command(args: argparse.Namespace) -> int:
 
     for record in records:
         summary = " | ".join(
-            item
-            for item in (
-                record.updated_at.isoformat(),
-                record.status,
-                record.company,
-                record.title,
-                record.location,
-                record.dedupe_key,
-            )
-            if item
-        )
+                    item
+                    for item in (
+                        record.updated_at.isoformat(),
+                        record.status,
+                        record.company,
+                        record.title,
+                        record.location,
+                        f"score={record.rank_score}" if record.rank_score is not None else None,
+                        record.dedupe_key,
+                        record.best_apply_url or record.link,
+                    )
+                    if item
+                )
         print(summary)
     return 0
 
@@ -200,11 +212,13 @@ def _handle_queue_command(args: argparse.Namespace) -> int:
                     item.status or "-",
                     f"score={item.score}",
                     f"age={item.age_minutes}m" if item.age_minutes is not None else "age=?",
+                    f"confidence={item.job.link_confidence}" if item.job.link_confidence else None,
                     item.job.company,
                     item.job.title,
                     item.job.location,
+                    item.reason,
                     item.job.dedupe_key,
-                    item.job.link,
+                    item.job.best_apply_url or item.job.link,
                 )
             )
         )
@@ -231,7 +245,10 @@ def _handle_seen_command(args: argparse.Namespace) -> int:
                     job.company,
                     job.title,
                     job.location,
+                    f"score={job.rank_score}" if job.rank_score is not None else None,
+                    f"confidence={job.link_confidence}" if job.link_confidence else None,
                     job.dedupe_key,
+                    job.best_apply_url or job.link,
                 )
             )
         )

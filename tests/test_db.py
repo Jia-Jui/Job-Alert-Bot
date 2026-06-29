@@ -83,6 +83,60 @@ class DbTests(unittest.TestCase):
             if db_path.exists():
                 db_path.unlink()
 
+    def test_sqlite_store_reads_old_rows_without_new_columns(self) -> None:
+        db_path = Path(__file__).resolve().parent / ".legacy-jobs.db"
+        if db_path.exists():
+            db_path.unlink()
+        try:
+            import sqlite3
+
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """
+                CREATE TABLE seen_jobs (
+                    dedupe_key TEXT PRIMARY KEY,
+                    source TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    company TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    location TEXT NOT NULL,
+                    link TEXT NOT NULL,
+                    first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO seen_jobs (dedupe_key, source, external_id, company, title, location, link, first_seen_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "greenhouse:legacy-1",
+                    "greenhouse",
+                    "legacy-1",
+                    "Legacy Co",
+                    "Software Engineer I",
+                    "Remote",
+                    "https://example.com/legacy-1",
+                    "2026-04-29 00:00:00",
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            seen_store = SQLiteSeenJobsStore(db_path)
+            jobs = seen_store.list_seen_jobs()
+
+            self.assertEqual(len(jobs), 1)
+            self.assertEqual(jobs[0].company, "Legacy Co")
+            self.assertIsNone(jobs[0].resolved_apply_url)
+            self.assertIsNone(jobs[0].rank_reason)
+        finally:
+            if "seen_store" in locals():
+                seen_store.conn.close()
+            if db_path.exists():
+                db_path.unlink()
+
 
 if __name__ == "__main__":
     unittest.main()
