@@ -7,6 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from job_alert_bot.filters import evaluate_job, location_priority
 from job_alert_bot.models import JobApplicationStatus, JobPosting
 from job_alert_bot.review import ACTIVE_PIPELINE_STATUSES, build_review_queue, group_status_board, normalize_status_alias
 
@@ -88,6 +89,101 @@ class ReviewTests(unittest.TestCase):
 
         self.assertEqual(len(grouped["applied"]), 1)
         self.assertEqual(len(grouped["rejected"]), 1)
+
+    def test_remote_roles_must_be_us_based(self) -> None:
+        us_remote = JobPosting(
+            source="lever",
+            external_id="us-1",
+            company="Acme",
+            title="Backend Engineer",
+            location="Remote - United States",
+            link="https://example.com/us-1",
+        )
+        canada_remote = JobPosting(
+            source="lever",
+            external_id="ca-1",
+            company="Beta",
+            title="Backend Engineer",
+            location="Remote - Canada",
+            link="https://example.com/ca-1",
+        )
+
+        us_result = evaluate_job(
+            us_remote,
+            include_keywords=["backend", "software engineer"],
+            exclude_keywords=[],
+            preferred_locations=["phoenix", "arizona", "remote", "california"],
+            company_priorities={},
+            fresh_window_minutes=60,
+        )
+        canada_result = evaluate_job(
+            canada_remote,
+            include_keywords=["backend", "software engineer"],
+            exclude_keywords=[],
+            preferred_locations=["phoenix", "arizona", "remote", "california"],
+            company_priorities={},
+            fresh_window_minutes=60,
+        )
+
+        self.assertNotIn("remote_outside_us", us_result.exclusion_flags)
+        self.assertIn("Preferred location", us_result.reason)
+        self.assertIn("remote_outside_us", canada_result.exclusion_flags)
+        self.assertEqual(location_priority(us_remote, ["phoenix", "arizona", "remote", "california"])[0], 0)
+        self.assertEqual(location_priority(canada_remote, ["phoenix", "arizona", "remote", "california"])[0], 1)
+
+    def test_remote_us_detection_avoids_false_positive_substrings(self) -> None:
+        preferred_locations = ["phoenix", "arizona", "remote", "california"]
+        valid_us_variants = [
+            "Remote within the US",
+            "Remote - US only",
+            "Remote - Arizona",
+        ]
+        invalid_variants = [
+            "Remote - Cape Town",
+            "Remote - Warsaw",
+            "Remote - Brazil",
+        ]
+
+        for index, location in enumerate(valid_us_variants, start=1):
+            job = JobPosting(
+                source="lever",
+                external_id=f"valid-{index}",
+                company="Valid Co",
+                title="Backend Engineer",
+                location=location,
+                link=f"https://example.com/valid-{index}",
+            )
+            result = evaluate_job(
+                job,
+                include_keywords=["backend", "software engineer"],
+                exclude_keywords=[],
+                preferred_locations=preferred_locations,
+                company_priorities={},
+                fresh_window_minutes=60,
+            )
+            self.assertNotIn("remote_outside_us", result.exclusion_flags)
+            self.assertEqual(location_priority(job, preferred_locations)[0], 0)
+
+        for index, location in enumerate(invalid_variants, start=1):
+            job = JobPosting(
+                source="lever",
+                external_id=f"invalid-{index}",
+                company="Invalid Co",
+                title="Backend Engineer",
+                location=location,
+                link=f"https://example.com/invalid-{index}",
+            )
+            result = evaluate_job(
+                job,
+                include_keywords=["backend", "software engineer"],
+                exclude_keywords=[],
+                preferred_locations=preferred_locations,
+                company_priorities={},
+                fresh_window_minutes=60,
+            )
+            self.assertIn("remote_outside_us", result.exclusion_flags)
+            self.assertEqual(location_priority(job, preferred_locations)[0], 1)
+            self.assertNotIn("Remote-friendly (U.S.)", result.reason)
 
 
 if __name__ == "__main__":

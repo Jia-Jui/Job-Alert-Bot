@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import re
 
 from .models import JobPosting
 
@@ -20,6 +21,42 @@ SENIORITY_EXCLUSION_HINTS = {"senior", "staff", "principal", "lead"}
 HYBRID_HINTS = ("hybrid",)
 REMOTE_HINTS = ("remote", "work from home", "distributed")
 ONSITE_HINTS = ("onsite", "on-site", "in office", "in-office")
+US_REMOTE_HINTS = (
+    "united states",
+    "u.s.",
+    "u.s.a.",
+    "usa",
+    "within the us",
+    "within us",
+    "within the united states",
+    "anywhere in the us",
+    "anywhere in the united states",
+    "based in the us",
+    "based in the united states",
+    "us-only",
+    "us only",
+    "u.s.-only",
+    "remote us",
+    "remote - us",
+    "remote, us",
+)
+NON_US_REMOTE_HINTS = (
+    "canada",
+    "emea",
+    "europe",
+    "eu only",
+    "eu-only",
+    "uk",
+    "united kingdom",
+    "india",
+    "apac",
+    "australia",
+    "new zealand",
+    "latam",
+    "latin america",
+    "mexico",
+    "singapore",
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +90,8 @@ def location_priority(job: JobPosting, preferred_locations: list[str]) -> tuple[
     title_text = job.title.lower()
 
     for index, preferred in enumerate(preferred_locations):
+        if preferred == "remote" and not _is_us_remote_location(location_text):
+            continue
         if preferred in location_text:
             return (0, index, location_text, title_text)
 
@@ -97,6 +136,8 @@ def evaluate_job(
 
     if seniority_hint in {"senior", "staff", "principal", "lead"}:
         exclusion_flags.append(f"seniority:{seniority_hint}")
+    if work_mode == "remote" and not _is_us_remote_location(location_text):
+        exclusion_flags.append("remote_outside_us")
 
     title_match = False
     for keyword in include_keywords:
@@ -131,9 +172,9 @@ def evaluate_job(
         location_bonus = max(1, 4 - min(location_rank[1], 3))
         score += location_bonus
         reasons.append("Preferred location")
-    elif work_mode == "remote":
+    elif work_mode == "remote" and _is_us_remote_location(location_text):
         score += 2
-        reasons.append("Remote-friendly")
+        reasons.append("Remote-friendly (U.S.)")
     elif work_mode == "hybrid":
         score += 1
         reasons.append("Hybrid option")
@@ -187,3 +228,32 @@ def _detect_work_mode(location_text: str) -> str:
     if any(hint in location_text for hint in ONSITE_HINTS):
         return "onsite"
     return "unknown"
+
+
+def _is_us_remote_location(location_text: str) -> bool:
+    if not any(hint in location_text for hint in REMOTE_HINTS):
+        return False
+    if any(hint in location_text for hint in NON_US_REMOTE_HINTS):
+        return False
+    if any(hint in location_text for hint in US_REMOTE_HINTS):
+        return True
+    return _mentions_us_state(location_text)
+
+
+def _mentions_us_state(location_text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", location_text.lower())
+    tokens = {token for token in normalized.split() if token}
+    phrases = (
+        "arizona",
+        "california",
+        "washington",
+        "texas",
+        "phoenix",
+        "scottsdale",
+        "tempe",
+        "mesa",
+        "seattle",
+    )
+    if any(phrase in normalized for phrase in phrases):
+        return True
+    return bool(tokens & {"az", "ca", "wa", "tx"})
