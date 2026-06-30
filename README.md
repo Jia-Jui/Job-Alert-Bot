@@ -52,6 +52,7 @@ This project is designed to reduce bot-trigger risk instead of trying to bypass 
   - Run every 30 to 60 minutes
   - Add small per-request delays
   - Use request timeouts
+  - Resolve heavier apply-link details only for new jobs that survive the first ranking pass
 - Be transparent:
   - Use a normal descriptive user agent
   - Do not rotate proxies
@@ -285,6 +286,11 @@ Resolution order:
 
 If nothing better is found, the bot falls back to the original job URL.
 
+Runtime note:
+
+- The bot now checks de-dupe and first-pass ranking before running heavier link resolution.
+- This keeps GitHub Actions and local scheduled runs faster because already-seen or obviously weak jobs are skipped before redirect and HTML apply-link lookups.
+
 Confidence levels:
 
 - `high`
@@ -350,6 +356,8 @@ python -m job_alert_bot status active
 `queue review` is the manual apply queue. It shows jobs whose `posted_at` or `first_seen_at` is at least 60 minutes old and that are still un-applied, so you can run it only when you are ready to review older openings.
 
 `queue review` now also shows the ranking reason, score, confidence, and best available apply link.
+
+The local dashboard now includes a `Needs Link Review` lane for promising jobs whose best apply link is still low-confidence, so you can sanity-check them manually before applying.
 
 Status shortcuts are available for faster updates:
 

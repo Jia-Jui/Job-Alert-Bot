@@ -42,6 +42,7 @@ class WebAppTests(unittest.TestCase):
                 location="Phoenix, AZ",
                 link="https://example.com/job-1",
                 posted_at=older,
+                link_confidence="low",
             )
         ]
         statuses = [
@@ -60,12 +61,14 @@ class WebAppTests(unittest.TestCase):
         html = _render_dashboard(dashboard, "Saved")
 
         self.assertIn("Review Queue", html)
+        self.assertIn("Needs Link Review", html)
         self.assertIn("Active Pipeline", html)
         self.assertIn("Status Board", html)
         self.assertIn("Acme", html)
         self.assertIn("lever:job-1", html)
         self.assertIn("Data source", html)
         self.assertIn("job-search", html)
+        self.assertIn("needs manual link check", html)
 
     def test_default_sqlite_path_points_to_repo_jobs_db(self) -> None:
         config = load_app_config()

@@ -20,6 +20,8 @@ from .sources.lever import fetch_lever_jobs
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
+MAX_POTENTIAL_LINK_BONUS = 3
+
 
 def main() -> int:
     config, source_config = load_config()
@@ -39,19 +41,34 @@ def main() -> int:
     fresh_jobs: list[JobPosting] = []
     digest_jobs: list[JobPosting] = []
     seen_run_keys: set[str] = set()
+    skipped_seen = 0
+    skipped_duplicates = 0
+    skipped_low_signal = 0
+    resolved_candidates = 0
 
     for job in jobs:
-        enriched_job = _prepare_job(job, client, config)
-        if _run_duplicate_key(enriched_job) in seen_run_keys:
+        run_key = _run_duplicate_key(job)
+        if run_key in seen_run_keys:
+            skipped_duplicates += 1
             continue
-        if store.is_seen(enriched_job):
+        if store.is_seen(job):
+            skipped_seen += 1
             continue
+
+        ranked_job = _prepare_preliminary_job(job, config)
+        if _should_skip_before_resolution(ranked_job, config.min_match_score):
+            skipped_low_signal += 1
+            continue
+
+        enriched_job = _resolve_and_rerank_job(ranked_job, client, config)
+        resolved_candidates += 1
         exclusion_flags = {flag.strip() for flag in (enriched_job.exclusion_flags or "").split(",") if flag.strip()}
         if exclusion_flags or (enriched_job.rank_score or 0) < config.min_match_score:
+            skipped_low_signal += 1
             continue
 
         store.save_job(enriched_job)
-        seen_run_keys.add(_run_duplicate_key(enriched_job))
+        seen_run_keys.add(run_key)
         if _is_fresh_job(enriched_job, config.fresh_window_minutes):
             fresh_jobs.append(enriched_job)
         else:
@@ -75,7 +92,14 @@ def main() -> int:
         _send_digest_notification(config, digest_jobs)
 
     new_matches = len(fresh_jobs) + len(digest_jobs)
-    logging.info("Finished. New matches: %s", new_matches)
+    logging.info(
+        "Finished. New matches: %s | resolved=%s | skipped_seen=%s | skipped_duplicates=%s | skipped_low_signal=%s",
+        new_matches,
+        resolved_candidates,
+        skipped_seen,
+        skipped_duplicates,
+        skipped_low_signal,
+    )
     return 0
 
 
@@ -146,12 +170,16 @@ def _run_duplicate_key(job: JobPosting) -> str:
     return job.dedupe_key
 
 
-def _prepare_job(job: JobPosting, client: SourceClient, config) -> JobPosting:
-    resolved = resolve_job_links(job, client, config)
-    resolved = replace(
-        resolved,
-        company_priority=config.company_priority_overrides.get(resolved.company.strip().lower(), 0),
+def _prepare_preliminary_job(job: JobPosting, config) -> JobPosting:
+    prioritized = replace(
+        job,
+        company_priority=config.company_priority_overrides.get(job.company.strip().lower(), 0),
     )
+    return _apply_ranking(prioritized, _evaluate(prioritized, config))
+
+
+def _resolve_and_rerank_job(job: JobPosting, client: SourceClient, config) -> JobPosting:
+    resolved = resolve_job_links(job, client, config)
     return _apply_ranking(resolved, _evaluate(resolved, config))
 
 
@@ -179,3 +207,10 @@ def _apply_ranking(job: JobPosting, ranking: RankingResult) -> JobPosting:
         work_mode=ranking.work_mode,
         company_priority=company_priority,
     )
+
+
+def _should_skip_before_resolution(job: JobPosting, min_match_score: int) -> bool:
+    exclusion_flags = {flag.strip() for flag in (job.exclusion_flags or "").split(",") if flag.strip()}
+    if exclusion_flags:
+        return True
+    return (job.rank_score or 0) + MAX_POTENTIAL_LINK_BONUS < min_match_score
