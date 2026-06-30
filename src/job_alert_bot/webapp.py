@@ -19,6 +19,8 @@ DEFAULT_UI_PORT = 8765
 class DashboardData:
     queue: list[ReviewQueueItem]
     queue_total: int
+    link_review_queue: list[ReviewQueueItem]
+    link_review_total: int
     grouped_statuses: dict[str, list[JobApplicationStatus]]
     active_records: list[JobApplicationStatus]
     seen_jobs: list[JobPosting]
@@ -57,6 +59,7 @@ def _build_dashboard(
         preferred_locations=config.preferred_locations,
         minimum_age_minutes=min_age_minutes,
     )
+    link_review_queue = [item for item in full_queue if item.needs_link_review]
     grouped = group_status_board(statuses)
     active = [record for record in statuses if record.status in ACTIVE_PIPELINE_STATUSES]
     active.sort(key=lambda item: item.updated_at, reverse=True)
@@ -77,6 +80,8 @@ def _build_dashboard(
     return DashboardData(
         queue=full_queue[:queue_limit],
         queue_total=len(full_queue),
+        link_review_queue=link_review_queue[: min(queue_limit, 6)],
+        link_review_total=len(link_review_queue),
         grouped_statuses=grouped,
         active_records=active,
         seen_jobs=seen_jobs[:seen_limit],
@@ -176,6 +181,10 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
     queue_cards = "".join(
         _render_queue_card(item, data.min_age_minutes, data.queue_limit, data.seen_limit) for item in data.queue
     ) or '<div class="empty-grid">No review queue jobs match the current filters.</div>'
+    link_review_cards = "".join(
+        _render_queue_card(item, data.min_age_minutes, data.queue_limit, data.seen_limit)
+        for item in data.link_review_queue
+    ) or '<div class="empty-grid">No uncertain-link jobs need manual review right now.</div>'
     active_cards = "".join(
         _render_status_card(record, data.min_age_minutes, data.queue_limit, data.seen_limit, accent="active")
         for record in data.active_records
@@ -854,11 +863,12 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
       <div class="hero-grid">
         <div>
           <div class="eyebrow">Review Studio</div>
-          <h1>Turn job tracking into a cleaner application workflow.</h1>
-          <p class="hero-copy">Review older openings, triage them with one click, and keep your application pipeline organized without disturbing the scheduled bot. This dashboard is local-first, fast, and meant for your manual review sessions.</p>
+          <h1>Run your job search like a focused command center.</h1>
+          <p class="hero-copy">Review stronger matches, surface uncertain apply links, and move jobs through your pipeline with one click. This dashboard stays local-first and keeps the scheduled bot separate from your manual application sessions.</p>
           <div class="hero-meta">
             <span class="meta-chip">Queue threshold: {data.min_age_minutes} minutes</span>
             <span class="meta-chip">Showing {len(data.queue)} of {data.queue_total} queue jobs</span>
+            <span class="meta-chip">Needs link review: {data.link_review_total}</span>
             <span class="meta-chip">Showing {len(data.seen_jobs)} of {data.seen_total} tracked jobs</span>
           </div>
           {flash}
@@ -910,11 +920,32 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
     {empty_banner}
 
     <div class="toolbar reveal">
+      <div class="button-row">
+        <a href="#link-review" class="button button-secondary">Needs Link Review</a>
+        <a href="#review-queue" class="button button-secondary">Queue</a>
+        <a href="#active-pipeline" class="button button-secondary">Active</a>
+        <a href="#status-board" class="button button-secondary">Board</a>
+        <a href="#seen-jobs" class="button button-secondary">Seen Jobs</a>
+      </div>
       <div class="search-shell">
         <input id="job-search" type="search" placeholder="Search company, role, location, or dedupe key">
       </div>
       <div class="toolbar-note">The browser console error you mentioned is usually a browser extension message-channel issue, not a failure from this local page.</div>
     </div>
+
+    <section id="link-review" class="reveal">
+      <div class="section-head">
+        <div>
+          <h2>Needs Link Review</h2>
+          <p>These jobs still look promising, but their best apply path is low-confidence. This is the fastest place to sanity-check the link before you apply.</p>
+        </div>
+        <div class="section-badge">{len(data.link_review_queue)} showing / {data.link_review_total} total</div>
+      </div>
+      <div class="card-grid js-filter-scope" data-empty-id="link-review-empty">
+        {link_review_cards}
+      </div>
+      <div id="link-review-empty" class="empty-grid js-filter-empty">No uncertain-link jobs match the current search.</div>
+    </section>
 
     <section id="review-queue" class="reveal">
       <div class="section-head">
@@ -930,7 +961,7 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
       <div id="queue-empty" class="empty-grid js-filter-empty">No queue cards match the current search.</div>
     </section>
 
-    <section class="reveal">
+    <section id="active-pipeline" class="reveal">
       <div class="section-head">
         <div>
           <h2>Active Pipeline</h2>
@@ -944,7 +975,7 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
       <div id="active-empty" class="empty-grid js-filter-empty">No active jobs match the current search.</div>
     </section>
 
-    <section class="reveal">
+    <section id="status-board" class="reveal">
       <div class="section-head">
         <div>
           <h2>Status Board</h2>
@@ -958,7 +989,7 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
       <div id="board-empty" class="empty-grid js-filter-empty">No status cards match the current search.</div>
     </section>
 
-    <section class="reveal">
+    <section id="seen-jobs" class="reveal">
       <div class="section-head">
         <div>
           <h2>Seen Jobs Snapshot</h2>
@@ -1027,22 +1058,27 @@ def _render_dashboard(data: DashboardData, message: str) -> str:
 
 def _render_queue_card(item: ReviewQueueItem, min_age_minutes: int, queue_limit: int, seen_limit: int) -> str:
     job = item.job
+    status_label = item.status or ("needs link review" if item.needs_link_review else "untracked")
+    confidence_label = job.link_confidence or "unknown"
+    confidence_class = " success" if confidence_label == "high" else ""
+    manual_link_pill = '<span class="pill">needs manual link check</span>' if item.needs_link_review else ""
     search_value = " ".join(
         value
-        for value in (job.company, job.title, job.location, job.dedupe_key, job.link, item.status or "")
+        for value in (job.company, job.title, job.location, job.dedupe_key, job.link, status_label, confidence_label)
         if value
     )
     return (
         f'<article class="job-card js-filter-item" data-search="{escape(search_value)}">'
         '<div class="job-top">'
         f'<div><div class="job-company">{escape(job.company)}</div><h3 class="job-title">{escape(job.title)}</h3></div>'
-        f'<span class="pill emphasis">{escape(item.status or "untracked")}</span>'
+        f'<span class="pill emphasis">{escape(status_label)}</span>'
         '</div>'
         f'<div class="job-meta">{escape(job.location)}<br><code>{escape(job.dedupe_key)}</code><br><a href="{escape(job.best_apply_url or job.link)}" target="_blank" rel="noreferrer">Open best apply link</a></div>'
         '<div class="job-tags">'
         f'<span class="pill emphasis">score {item.score}</span>'
         f'<span class="pill">{item.age_minutes if item.age_minutes is not None else "?"}m old</span>'
-        f'<span class="pill">{escape(job.link_confidence or "unknown")} link</span>'
+        f'<span class="pill{confidence_class}">{escape(confidence_label)} link</span>'
+        f"{manual_link_pill}"
         f'<span class="pill">manual queue</span>'
         '</div>'
         f'<div class="job-meta">{escape(item.reason or "Reason unavailable.")}</div>'

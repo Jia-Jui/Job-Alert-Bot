@@ -17,6 +17,7 @@ APPLY_TEXT_HINTS = (
     "referral",
     "candidate portal",
 )
+FOLLOW_UP_LINK_LIMIT = 12
 TRACKING_HINTS = (
     "referral",
     "gh_jid",
@@ -119,41 +120,52 @@ def _extract_apply_link_from_page(client: SourceClient, url: str, timeout_second
     parser = _AnchorParser()
     parser.feed(html)
     for href, combined in parser.links:
-        if any(hint in combined for hint in APPLY_TEXT_HINTS):
+        if _looks_like_apply_target(href, combined):
             return urljoin(url, href), "Parsed a likely apply link from the public job detail page."
     return None, "No explicit apply anchor was found on the public page."
 
 
 def _advanced_public_link_discovery(client: SourceClient, url: str, config: AppConfig) -> tuple[str | None, str, str | None]:
-    try:
-        html = client.get_text(url, timeout_seconds=config.link_discovery_timeout_seconds)
-    except Exception:
-        return None, "low", "Advanced public discovery could not load the page."
+    frontier = [url]
+    visited: set[str] = set()
+    best_tracking: str | None = None
+    pages_checked = 0
 
-    pages_checked = 1
-    best_candidate: str | None = None
-
-    parser = _AnchorParser()
-    parser.feed(html)
-    for href, _combined in parser.links:
-        if pages_checked >= config.link_discovery_max_pages:
-            break
-        href = urljoin(url, href)
-        if not href.startswith("http"):
+    while frontier and pages_checked < config.link_discovery_max_pages:
+        current = frontier.pop(0)
+        if current in visited:
             continue
-        if any(hint in href.lower() for hint in TRACKING_HINTS):
-            best_candidate = href
-            break
-        if not _same_host(href, url):
-            continue
+        visited.add(current)
         pages_checked += 1
-        nested_candidate, _ = _extract_apply_link_from_page(client, href, config.link_discovery_timeout_seconds)
-        if nested_candidate:
-            best_candidate = nested_candidate
-            break
 
-    if best_candidate:
-        return best_candidate, "medium", "Advanced public discovery found a candidate by following additional public page links."
+        try:
+            html = client.get_text(current, timeout_seconds=config.link_discovery_timeout_seconds)
+        except Exception:
+            continue
+
+        parser = _AnchorParser()
+        parser.feed(html)
+        for href, combined in parser.links[:FOLLOW_UP_LINK_LIMIT]:
+            absolute = urljoin(current, href)
+            if not absolute.startswith("http"):
+                continue
+
+            if _looks_like_apply_target(absolute, combined):
+                redirect_target = _resolve_redirect_target(client, absolute, config.link_discovery_timeout_seconds)
+                candidate = redirect_target or absolute
+                confidence = "high" if _same_host(candidate, current) else "medium"
+                note = f"Advanced public discovery found a likely apply path after checking {pages_checked} public page(s)."
+                return candidate, confidence, note
+
+            if _tracking_link(absolute) and best_tracking is None:
+                best_tracking = absolute
+
+            if _same_host(absolute, current) and absolute not in visited and absolute not in frontier:
+                frontier.append(absolute)
+
+    if best_tracking:
+        note = f"Advanced public discovery found a likely referral or tracking link after checking {pages_checked} public page(s)."
+        return best_tracking, "medium", note
     return None, "low", "Advanced public discovery did not improve the apply link."
 
 
@@ -178,22 +190,54 @@ def _same_host(first: str, second: str) -> bool:
     return urlparse(first).netloc.lower() == urlparse(second).netloc.lower()
 
 
+def _looks_like_apply_target(href: str, combined: str) -> bool:
+    lowered_href = href.lower()
+    lowered_combined = combined.lower()
+    return any(hint in lowered_combined for hint in APPLY_TEXT_HINTS) or any(hint in lowered_href for hint in APPLY_TEXT_HINTS)
+
+
 class _AnchorParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.links: list[tuple[str, str]] = []
         self._current_href: str | None = None
         self._current_parts: list[str] = []
+        self._current_tag: str | None = None
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() != "a":
-            return
         attr_map = {key.lower(): value or "" for key, value in attrs}
-        href = attr_map.get("href", "").strip()
+        tag_name = tag.lower()
+        href = ""
+        if tag_name == "a":
+            href = attr_map.get("href", "").strip()
+        elif tag_name == "form":
+            href = attr_map.get("action", "").strip()
+        elif tag_name in {"button", "input"}:
+            href = (
+                attr_map.get("formaction", "").strip()
+                or attr_map.get("data-apply-url", "").strip()
+                or attr_map.get("data-url", "").strip()
+            )
         if not href:
             return
         self._current_href = href
-        self._current_parts = [attr_map.get("aria-label", "").strip().lower(), attr_map.get("class", "").strip().lower()]
+        self._current_tag = tag_name
+        self._current_parts = [
+            attr_map.get("aria-label", "").strip().lower(),
+            attr_map.get("class", "").strip().lower(),
+            attr_map.get("title", "").strip().lower(),
+            attr_map.get("id", "").strip().lower(),
+            attr_map.get("name", "").strip().lower(),
+            attr_map.get("value", "").strip().lower(),
+            attr_map.get("data-qa", "").strip().lower(),
+            attr_map.get("data-testid", "").strip().lower(),
+        ]
+        if tag_name in {"form", "input"}:
+            combined = " ".join(part for part in self._current_parts if part).strip()
+            self.links.append((self._current_href, combined))
+            self._current_href = None
+            self._current_parts = []
+            self._current_tag = None
 
     def handle_data(self, data: str) -> None:
         if self._current_href is None:
@@ -201,9 +245,13 @@ class _AnchorParser(HTMLParser):
         self._current_parts.append(data.strip().lower())
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() != "a" or self._current_href is None:
+        if self._current_href is None:
+            return
+        tag_name = tag.lower()
+        if tag_name != self._current_tag:
             return
         combined = " ".join(part for part in self._current_parts if part).strip()
         self.links.append((self._current_href, combined))
         self._current_href = None
         self._current_parts = []
+        self._current_tag = None

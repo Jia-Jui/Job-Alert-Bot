@@ -107,6 +107,46 @@ class LinkResolverTests(unittest.TestCase):
         )
         self.assertEqual(choose_notification_apply_url(job), "https://apply.example.com/4?ref=friend")
 
+    def test_advanced_discovery_follows_public_page_chain_when_enabled(self) -> None:
+        job = JobPosting(
+            source="lever",
+            external_id="5",
+            company="Epsilon",
+            title="Backend Engineer",
+            location="Remote",
+            link="https://jobs.example.com/5",
+            public_job_url="https://jobs.example.com/5",
+        )
+        root_html = """
+        <html>
+          <body>
+            <a href="/candidate-portal">View full details</a>
+          </body>
+        </html>
+        """
+        child_html = """
+        <html>
+          <body>
+            <a href="/apply/5">Apply now</a>
+          </body>
+        </html>
+        """
+        config = AppConfig(enable_advanced_link_discovery=True, link_discovery_max_pages=2)
+        resolved = resolve_job_links(
+            job,
+            _FakeClient(
+                html_map={
+                    "https://jobs.example.com/5": root_html,
+                    "https://jobs.example.com/candidate-portal": child_html,
+                }
+            ),
+            config,
+        )
+
+        self.assertEqual(resolved.resolved_apply_url, "https://jobs.example.com/apply/5")
+        self.assertEqual(resolved.link_source, "advanced_public_discovery")
+        self.assertEqual(resolved.link_confidence, "high")
+
 
 if __name__ == "__main__":
     unittest.main()
