@@ -312,6 +312,20 @@ Ranking is explainable and now considers:
 - apply-link confidence
 - exclusion flags
 
+Remote handling is intentionally stricter for this search profile:
+
+- `remote` only counts as preferred when the posting is clearly U.S.-eligible
+- examples that still qualify:
+  - `Remote - United States`
+  - `Remote US`
+  - `Remote - Arizona`
+  - `Remote - California`
+- examples that are excluded from the remote preference:
+  - `Remote - Canada`
+  - `Remote - EMEA`
+  - `Remote - Europe`
+  - `Remote - India`
+
 A stored reason string looks like:
 
 ```text
