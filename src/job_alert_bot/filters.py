@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import re
 
 from .models import JobPosting
 
@@ -25,6 +26,13 @@ US_REMOTE_HINTS = (
     "u.s.",
     "u.s.a.",
     "usa",
+    "within the us",
+    "within us",
+    "within the united states",
+    "anywhere in the us",
+    "anywhere in the united states",
+    "based in the us",
+    "based in the united states",
     "us-only",
     "us only",
     "u.s.-only",
@@ -164,7 +172,7 @@ def evaluate_job(
         location_bonus = max(1, 4 - min(location_rank[1], 3))
         score += location_bonus
         reasons.append("Preferred location")
-    elif work_mode == "remote":
+    elif work_mode == "remote" and _is_us_remote_location(location_text):
         score += 2
         reasons.append("Remote-friendly (U.S.)")
     elif work_mode == "hybrid":
@@ -233,21 +241,19 @@ def _is_us_remote_location(location_text: str) -> bool:
 
 
 def _mentions_us_state(location_text: str) -> bool:
-    return any(
-        hint in location_text
-        for hint in (
-            "arizona",
-            "az",
-            "california",
-            "ca",
-            "washington",
-            "wa",
-            "texas",
-            "tx",
-            "phoenix",
-            "scottsdale",
-            "tempe",
-            "mesa",
-            "seattle",
-        )
+    normalized = re.sub(r"[^a-z0-9]+", " ", location_text.lower())
+    tokens = {token for token in normalized.split() if token}
+    phrases = (
+        "arizona",
+        "california",
+        "washington",
+        "texas",
+        "phoenix",
+        "scottsdale",
+        "tempe",
+        "mesa",
+        "seattle",
     )
+    if any(phrase in normalized for phrase in phrases):
+        return True
+    return bool(tokens & {"az", "ca", "wa", "tx"})
